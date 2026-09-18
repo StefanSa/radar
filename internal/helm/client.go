@@ -2780,7 +2780,7 @@ func (c *Client) loadTargetChart(actionConfig *action.Configuration, rel *releas
 	// OCI pulls need a registry client on the action; Radar's action config
 	// doesn't carry one by default. Wire it from the user's helm registry login.
 	if registry.IsOCI(chartPath) {
-		rc, err := c.newRegistryClientConcrete()
+		rc, err := c.newRegistryClientForChartPull()
 		if err != nil {
 			return nil, fmt.Errorf("failed to build OCI registry client: %w", err)
 		}
@@ -2916,7 +2916,15 @@ func resolveOCIChartURL(source, chartName string) (string, error) {
 	if chartName == "" {
 		return "", fmt.Errorf("chart name is empty")
 	}
-	if strings.HasSuffix(source, "/"+chartName) {
+	chartPath := source
+	lastSlash := strings.LastIndex(chartPath, "/")
+	if lastSlash >= 0 {
+		lastComponent := chartPath[lastSlash+1:]
+		if selector := strings.IndexAny(lastComponent, ":@"); selector >= 0 {
+			chartPath = chartPath[:lastSlash+1] + lastComponent[:selector]
+		}
+	}
+	if strings.HasSuffix(chartPath, "/"+chartName) {
 		return source, nil
 	}
 	return source + "/" + chartName, nil
@@ -2939,7 +2947,7 @@ func (c *Client) locateChartPath(actionConfig *action.Configuration, chartURL, v
 	locator := action.NewInstall(actionConfig)
 	locator.Version = version
 	if registry.IsOCI(chartURL) {
-		registryClient, err := c.newRegistryClientConcrete()
+		registryClient, err := c.newRegistryClientForChartPull()
 		if err != nil {
 			return "", fmt.Errorf("failed to build OCI registry client: %w", err)
 		}

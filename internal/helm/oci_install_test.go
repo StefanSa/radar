@@ -7,11 +7,13 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"helm.sh/helm/v3/pkg/action"
 	"helm.sh/helm/v3/pkg/chart"
 	"helm.sh/helm/v3/pkg/chartutil"
 	"helm.sh/helm/v3/pkg/cli"
+	"helm.sh/helm/v3/pkg/registry"
 	"helm.sh/helm/v3/pkg/release"
 	"helm.sh/helm/v3/pkg/repo"
 )
@@ -51,6 +53,93 @@ func ociInstallTestChart(t *testing.T, name, version string) string {
 		t.Fatal(err)
 	}
 	return archive
+}
+
+func TestOCIChartPullClientDoesNotUseProbeTimeout(t *testing.T) {
+	client := ociInstallTestClient(t, nil)
+
+	probeClient, err := client.newRegistryClientConcrete()
+	if err != nil {
+		t.Fatalf("newRegistryClientConcrete: %v", err)
+	}
+	pullClient, err := client.newRegistryClientForChartPull()
+	if err != nil {
+		t.Fatalf("newRegistryClientForChartPull: %v", err)
+	}
+
+	if got := registryClientHTTPTimeout(t, probeClient); got != ociProbeTimeout {
+		t.Fatalf("probe client timeout = %s, want %s", got, ociProbeTimeout)
+	}
+	if got := registryClientHTTPTimeout(t, pullClient); got != 0 {
+		t.Fatalf("chart pull client timeout = %s, want no overall timeout", got)
+	}
+}
+
+func registryClientHTTPTimeout(t *testing.T, client *registry.Client) time.Duration {
+	t.Helper()
+	httpClient := reflect.ValueOf(client).Elem().FieldByName("httpClient")
+	if !httpClient.IsValid() || httpClient.IsNil() {
+		t.Fatal("helm registry client has no HTTP client")
+	}
+	timeout := httpClient.Elem().FieldByName("Timeout")
+	if !timeout.IsValid() {
+		t.Fatal("helm registry HTTP client has no timeout field")
+	}
+	return time.Duration(timeout.Int())
+}
+
+func TestResolveOCIChartURLPreservesCompleteReferences(t *testing.T) {
+	tests := []struct {
+		name   string
+		source string
+	}{
+		{name: "tag", source: "oci://registry.example/acme/charts/widget:1.2.3"},
+		{name: "digest", source: "oci://registry.example/acme/charts/widget@sha256:d234555386402a5867ef0169fefe5486858b6d8d209eaf32fd26d29b16807fd6"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := resolveOCIChartURL(tt.source, "widget")
+			if err != nil {
+				t.Fatalf("resolveOCIChartURL: %v", err)
+			}
+			if got != tt.source {
+				t.Fatalf("resolved URL = %q, want %q", got, tt.source)
+			}
+		})
+	}
+}
+
+func TestInstallWithCompleteOCIReferencePreservesExactVersion(t *testing.T) {
+	tests := []struct {
+		name       string
+		repository string
+	}{
+		{name: "tag", repository: "oci://registry.example/acme/charts/widget:1.2.3"},
+		{name: "digest", repository: "oci://registry.example/acme/charts/widget@sha256:d234555386402a5867ef0169fefe5486858b6d8d209eaf32fd26d29b16807fd6"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			archive := ociInstallTestChart(t, "widget", "1.2.3")
+			var call chartLocationCall
+			client := ociInstallTestClient(t, func(_ *action.Configuration, chartURL, version string) (string, error) {
+				call = chartLocationCall{chartURL: chartURL, version: version}
+				return archive, nil
+			})
+			req := &InstallRequest{
+				ReleaseName: "widget", Namespace: "default", ChartName: "widget",
+				Version: "1.2.3", Repository: tt.repository,
+			}
+
+			if _, err := client.installWith(memoryActionConfig(t), req); err != nil {
+				t.Fatalf("installWith: %v", err)
+			}
+			if call != (chartLocationCall{chartURL: tt.repository, version: req.Version}) {
+				t.Fatalf("location call = %+v", call)
+			}
+		})
+	}
 }
 
 func TestGetChartDetailDirectOCI(t *testing.T) {
