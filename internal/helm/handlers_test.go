@@ -3,6 +3,8 @@ package helm
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -12,6 +14,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/skyhook-io/radar/internal/auth"
+	"helm.sh/helm/v3/pkg/storage/driver"
 )
 
 func TestChartSourceRoutesAndWriteAuthorization(t *testing.T) {
@@ -43,6 +46,26 @@ func TestChartSourceRoutesAndWriteAuthorization(t *testing.T) {
 		if rec.Code != http.StatusForbidden {
 			t.Fatalf("%s %s = %d, want role-gated 403", tc.method, tc.path, rec.Code)
 		}
+	}
+}
+
+func TestChartSourceErrorStatus(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		err  error
+		want int
+	}{
+		{name: "invalid source", err: fmt.Errorf("%w: bad selection", errInvalidChartSource), want: http.StatusBadRequest},
+		{name: "invalid repository", err: fmt.Errorf("%w: bad URL", errInvalidRepositoryRequest), want: http.StatusBadRequest},
+		{name: "alias conflict", err: fmt.Errorf("%w: alias owned", errRepositoryConflict), want: http.StatusConflict},
+		{name: "missing release", err: fmt.Errorf("get release: %w", driver.ErrReleaseNotFound), want: http.StatusNotFound},
+		{name: "storage failure", err: errors.New("storage unavailable"), want: http.StatusInternalServerError},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := chartSourceErrorStatus(tc.err); got != tc.want {
+				t.Fatalf("chartSourceErrorStatus(%v) = %d, want %d", tc.err, got, tc.want)
+			}
+		})
 	}
 }
 

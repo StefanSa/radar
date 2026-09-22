@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { isUpgradeSourceIssueActionable } from './HelmReleaseDrawer'
+import { effectiveHelmStorageNamespace, isUpgradeSourceIssueActionable } from './HelmReleaseDrawer'
 
 describe('isUpgradeSourceIssueActionable', () => {
   it('allows explicit association for ambiguous and unavailable sources', () => {
@@ -15,5 +15,15 @@ describe('isUpgradeSourceIssueActionable', () => {
 
   it('does not treat a missing reason code as actionable', () => {
     expect(isUpgradeSourceIssueActionable(undefined)).toBe(false)
+  })
+})
+
+describe('effectiveHelmStorageNamespace', () => {
+  it('falls back to the release namespace when storageNamespace is empty', () => {
+    expect(effectiveHelmStorageNamespace({ namespace: 'production', name: 'release', storageNamespace: '' })).toBe('production')
+  })
+
+  it('uses an explicit storage namespace', () => {
+    expect(effectiveHelmStorageNamespace({ namespace: 'production', name: 'release', storageNamespace: 'helm-storage' })).toBe('helm-storage')
   })
 })

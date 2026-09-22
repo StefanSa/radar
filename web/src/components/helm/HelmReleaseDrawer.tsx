@@ -38,6 +38,10 @@ interface HelmReleaseDrawerProps {
   rightInset?: number
 }
 
+export function effectiveHelmStorageNamespace(release: SelectedHelmRelease): string {
+  return release.storageNamespace || release.namespace
+}
+
 type TabId = 'overview' | 'history' | 'manifest' | 'values' | 'resources' | 'hooks'
 
 interface UpgradePreviewRequest {
@@ -144,7 +148,7 @@ export function HelmReleaseDrawer({ release, onClose, onNavigateToResource, isOp
   // transient error state under the role-gated panel.
   const { canAtLeast } = useCloudRole()
   const canViewSensitive = canAtLeast('member')
-  const helmNamespace = release.storageNamespace || release.namespace
+  const helmNamespace = effectiveHelmStorageNamespace(release)
 
   const { data: releaseDetail, isLoading, error: releaseError, refetch: refetchRelease } = useHelmRelease(
     helmNamespace,
@@ -1007,8 +1011,8 @@ export function HelmReleaseDrawer({ release, onClose, onNavigateToResource, isOp
         open={showTrackSource}
         onClose={() => setShowTrackSource(false)}
         chartName={releaseDetail?.chart}
-		namespace={release.storageNamespace ?? release.namespace}
-		releaseName={release.name}
+        namespace={helmNamespace}
+        releaseName={release.name}
         sourceIssue={upgradeSourceIssue}
         sourceError={upgradeInfo?.error}
       />
