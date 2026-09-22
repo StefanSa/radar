@@ -10,8 +10,41 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/go-chi/chi/v5"
 	"github.com/skyhook-io/radar/internal/auth"
 )
+
+func TestChartSourceRoutesAndWriteAuthorization(t *testing.T) {
+	old := globalClient
+	globalClient = nil
+	defer func() { globalClient = old }()
+	router := chi.NewRouter()
+	NewHandlers(nil).RegisterRoutes(router)
+
+	get := httptest.NewRequest(http.MethodGet, "/helm/releases/default/example/source", nil)
+	getRec := httptest.NewRecorder()
+	router.ServeHTTP(getRec, get)
+	if getRec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("GET source status = %d, want registered route status %d", getRec.Code, http.StatusServiceUnavailable)
+	}
+
+	for _, tc := range []struct {
+		method string
+		path   string
+		body   string
+	}{
+		{http.MethodPut, "/helm/releases/default/example/source", `{"type":"repository","reference":"repo","url":"https://example.test"}`},
+		{http.MethodPost, "/helm/repositories", `{"name":"repo","url":"https://example.test"}`},
+	} {
+		req := httptest.NewRequest(tc.method, tc.path, strings.NewReader(tc.body))
+		req = req.WithContext(auth.ContextWithUser(req.Context(), &auth.User{Username: "viewer", Groups: []string{"radar:viewer"}}))
+		rec := httptest.NewRecorder()
+		router.ServeHTTP(rec, req)
+		if rec.Code != http.StatusForbidden {
+			t.Fatalf("%s %s = %d, want role-gated 403", tc.method, tc.path, rec.Code)
+		}
+	}
+}
 
 // TestRequireCloudRole exercises the role gate without standing up a
 // Helm client — the gate runs first, so we never hit the client. This
