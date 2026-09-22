@@ -2934,6 +2934,9 @@ func resolveOCIChartURL(source, chartName string) (string, error) {
 // registry client explicitly; Radar builds it from Helm's existing registry
 // credential store and never changes the configured OCI source inventory.
 func (c *Client) locateChartPath(actionConfig *action.Configuration, chartURL, version string) (string, error) {
+	if registry.IsOCI(chartURL) && version == "latest" {
+		version = ""
+	}
 	if c.chartPathLocator != nil {
 		return c.chartPathLocator(actionConfig, chartURL, version)
 	}
