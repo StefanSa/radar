@@ -154,10 +154,10 @@ export function HelmReleaseDrawer({ release, onClose, onNavigateToResource, isOp
   )
 
   // Fetch values
-  const { data: values, isLoading: valuesLoading } = useHelmValues(
+  const { data: values, isLoading: valuesLoading, error: valuesError } = useHelmValues(
     helmNamespace,
     release.name,
-    showEffectiveValues,
+    true,
     canViewSensitive,
     selectedRevision,
   )
@@ -748,6 +748,7 @@ export function HelmReleaseDrawer({ release, onClose, onNavigateToResource, isOp
                 <ValuesViewer
                   values={values}
                   isLoading={valuesLoading}
+                  error={valuesError}
                   showEffectiveValues={showEffectiveValues}
                   onToggleEffectiveValues={setShowEffectiveValues}
                   onCopy={(text) => copyToClipboard(text, 'values')}
